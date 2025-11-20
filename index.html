@@ -91,19 +91,31 @@
             </button>
         </div>
 
-        <!-- 歷史紀錄模式 -->
+        <!-- 歷史紀錄模式 (已修改：支援補寫/修改) -->
         <div v-if="showHistory" class="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50">
             <h2 class="text-xl font-bold text-center mb-4">我們的回憶</h2>
             <div v-for="day in historyDays" :key="day" class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                 <div class="text-xs text-rose-400 font-bold mb-1">Day {{ day }}</div>
                 <div class="font-medium text-gray-800 mb-3">{{ questions[day - 1] }}</div>
                 <div class="space-y-3 text-sm">
-                    <div class="bg-rose-50 p-3 rounded-lg">
-                        <div class="text-xs text-rose-400 mb-1">我</div>
-                        {{ getMyAnswer(day) || '(未回答)' }}
+                    
+                    <!-- 我的回答 (改成輸入框) -->
+                    <div class="bg-rose-50 p-2 rounded-lg border border-rose-100">
+                        <div class="text-xs text-rose-400 mb-1 font-bold flex justify-between">
+                            <span>我</span>
+                            <span class="text-[10px] opacity-60">點擊文字即可補寫/修改</span>
+                        </div>
+                        <textarea 
+                            :value="getMyAnswer(day)" 
+                            @change="(e) => updatePastAnswer(day, e.target.value)"
+                            placeholder="這裡還沒寫喔，點我補寫..."
+                            class="w-full bg-transparent border-b border-dashed border-rose-300 focus:border-rose-500 focus:outline-none min-h-[3rem] resize-none text-gray-700"
+                        ></textarea>
                     </div>
+
+                    <!-- 對方的回答 (保持唯讀) -->
                     <div class="bg-blue-50 p-3 rounded-lg">
-                        <div class="text-xs text-blue-400 mb-1">對方</div>
+                        <div class="text-xs text-blue-400 mb-1 font-bold">對方</div>
                         {{ getPartnerAnswer(day) || '(還沒回答)' }}
                     </div>
                 </div>
@@ -374,6 +386,22 @@ createApp({
             return dayData[role];
         };
 
+        // 補寫/修改歷史紀錄的功能
+        const updatePastAnswer = (day, content) => {
+            if (!roomId.value) return;
+            
+            // 1. 先更新畫面讓你看起來有改
+            if (!answers.value[`day_${day}`]) {
+                answers.value[`day_${day}`] = {};
+            }
+            answers.value[`day_${day}`][userRole.value] = content;
+
+            // 2. 寫入 Firebase (使用 update 比較省流量)
+            db.ref(`rooms/${roomId.value}/answers/day_${day}`).update({
+                [userRole.value]: content
+            });
+        };
+
         // 頁面載入時，如果有舊的登入資訊就自動連線
         onMounted(() => {
             if (roomId.value) {
@@ -402,6 +430,7 @@ createApp({
             questions,
             getMyAnswer,
             getPartnerAnswer,
+            updatePastAnswer,
             modal
         };
     }
