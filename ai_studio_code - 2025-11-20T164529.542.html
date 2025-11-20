@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>心之所向：100個深度對話</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <style>
+        body {
+            font-family: 'Noto Serif TC', serif;
+            background-color: #fdf2f2; /* 淺粉紅背景 */
+            color: #4a4a4a;
+        }
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.5s ease;
+        }
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+        .heart-beat {
+            animation: heartbeat 1.5s infinite;
+        }
+        @keyframes heartbeat {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #e11d48;
+            box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+<div id="app" class="min-h-screen flex flex-col max-w-md mx-auto bg-white shadow-xl overflow-hidden relative">
+    
+    <!-- 頁面載入中 -->
+    <div v-if="loading" class="absolute inset-0 bg-white z-50 flex items-center justify-center">
+        <div class="text-rose-500 text-xl animate-pulse">載入愛的旅程...</div>
+    </div>
+
+    <!-- 1. 登入/配對畫面 -->
+    <div v-if="!isInRoom" class="flex-1 flex flex-col items-center justify-center p-8 space-y-8 text-center">
+        <div>
+            <div class="text-4xl text-rose-500 mb-2 heart-beat">❤</div>
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">心之所向</h1>
+            <p class="text-sm text-gray-500">100 題線上對話，共創深度時刻</p>
+        </div>
+
+        <div class="w-full space-y-4">
+            <div class="bg-rose-50 p-6 rounded-xl">
+                <h3 class="font-bold mb-2">建立新旅程</h3>
+                <p class="text-xs text-gray-600 mb-4">如果你是發起人，請點擊這裡產生配對碼</p>
+                <button @click="createRoom" class="w-full bg-rose-500 text-white py-3 rounded-lg hover:bg-rose-600 transition">建立房間</button>
+            </div>
+
+            <div class="relative flex py-2 items-center">
+                <div class="flex-grow border-t border-gray-200"></div>
+                <span class="flex-shrink-0 mx-4 text-gray-400 text-xs">或</span>
+                <div class="flex-grow border-t border-gray-200"></div>
+            </div>
+
+            <div class="bg-gray-50 p-6 rounded-xl">
+                <h3 class="font-bold mb-2">加入旅程</h3>
+                <p class="text-xs text-gray-600 mb-4">輸入另一半給你的配對碼</p>
+                <input v-model="inputRoomId" type="text" placeholder="輸入配對碼" class="w-full p-3 border rounded-lg mb-3 text-center uppercase tracking-widest">
+                <button @click="joinRoom" :disabled="!inputRoomId" class="w-full bg-gray-800 text-white py-3 rounded-lg hover:bg-gray-900 transition disabled:opacity-50">加入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 主遊戲畫面 -->
+    <div v-else class="flex-1 flex flex-col h-full">
+        <!-- 頂部導航 -->
+        <div class="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-10">
+            <div class="text-xs font-bold text-rose-500 tracking-widest">DAY {{ currentDay }} / 100</div>
+            <button @click="showHistory = !showHistory" class="text-gray-400 hover:text-rose-500 transition">
+                <span v-if="!showHistory">查看回顧</span>
+                <span v-else>回到今日</span>
+            </button>
+        </div>
+
+        <!-- 歷史紀錄模式 -->
+        <div v-if="showHistory" class="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50">
+            <h2 class="text-xl font-bold text-center mb-4">我們的回憶</h2>
+            <div v-for="day in historyDays" :key="day" class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                <div class="text-xs text-rose-400 font-bold mb-1">Day {{ day }}</div>
+                <div class="font-medium text-gray-800 mb-3">{{ questions[day - 1] }}</div>
+                <div class="space-y-3 text-sm">
+                    <div class="bg-rose-50 p-3 rounded-lg">
+                        <div class="text-xs text-rose-400 mb-1">我</div>
+                        {{ getMyAnswer(day) || '(未回答)' }}
+                    </div>
+                    <div class="bg-blue-50 p-3 rounded-lg">
+                        <div class="text-xs text-blue-400 mb-1">對方</div>
+                        {{ getPartnerAnswer(day) || '(還沒回答)' }}
+                    </div>
+                </div>
+            </div>
+            <div v-if="historyDays.length === 0" class="text-center text-gray-400 py-10">還沒有過去的紀錄喔</div>
+        </div>
+
+        <!-- 今日問答模式 -->
+        <div v-else class="flex-1 overflow-y-auto p-6 flex flex-col">
+            <!-- 問題卡片 -->
+            <div class="bg-white rounded-2xl shadow-lg border border-rose-100 p-6 mb-6 text-center relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-2 bg-rose-400"></div>
+                <h2 class="text-lg font-bold text-gray-800 leading-relaxed mt-2">{{ todayQuestion }}</h2>
+            </div>
+
+            <!-- 回答區域 -->
+            <div class="space-y-6 flex-1">
+                <!-- 我的回答 -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-2 uppercase">我的回答</label>
+                    <textarea 
+                        v-model="myCurrentAnswer" 
+                        @input="saveAnswerDebounce"
+                        placeholder="寫下你最真實的想法..." 
+                        class="w-full h-32 p-4 rounded-xl border border-gray-200 bg-white text-gray-700 text-base resize-none shadow-inner transition focus:bg-rose-50"
+                    ></textarea>
+                    <div class="text-right text-xs text-gray-400 mt-1" v-if="isSaving">儲存中...</div>
+                    <div class="text-right text-xs text-green-500 mt-1" v-if="!isSaving && saved">已儲存</div>
+                </div>
+
+                <!-- 對方的回答 (即時同步) -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-2 uppercase">對方的回答</label>
+                    <div v-if="partnerCurrentAnswer" class="w-full min-h-[8rem] p-4 rounded-xl border border-blue-100 bg-blue-50 text-gray-700 text-base whitespace-pre-wrap">
+                        {{ partnerCurrentAnswer }}
+                    </div>
+                    <div v-else class="w-full h-32 flex items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-gray-400 text-sm">
+                        等待對方回答中...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部資訊 -->
+        <div class="p-4 bg-gray-50 text-center text-xs text-gray-400">
+            房間代碼: <span class="font-mono font-bold text-gray-600 select-all">{{ roomId }}</span>
+        </div>
+    </div>
+
+    <!-- 彈窗提示 -->
+    <div v-if="modal.show" class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6 z-50">
+        <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-lg font-bold mb-2">{{ modal.title }}</h3>
+            <p class="text-gray-600 mb-4">{{ modal.message }}</p>
+            <button @click="modal.show = false" class="w-full bg-rose-500 text-white py-2 rounded-lg">好</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, watch } = Vue;
+
+// 題目列表 (根據 PDF 內容整理)
+const QUESTION_LIST = [
+    // 吸引與悸動 (1-23)
+    "你什麼時候對我印象深刻？", "說一個你在我身上相當欣賞的特質", "你覺得一段理想的關係，需要具備那些特質？", "在一段親密關係裡，你覺得表現脆弱會發生什麼事？", "你認為兩個人適不適合，是性格互補還是價值觀一致？",
+    "對方哪些行為讓你感到怦然心動？", "請用三個詞形容自己是怎樣的伴侶？", "你期待我在關係裡，扮演什麼樣的角色？（例如隊友、情人）", "過去喜歡的我的樣子，與現在喜歡的有什麼不一樣的地方？", "我們之間什麼是讓你最放鬆做自己的時刻？",
+    "如果要寫下對彼此的感謝清單，你會寫哪三條？", "有沒有一件小事，如果我可以做到的話非常加分？", "有沒有關於我的事，是你想到就會笑出來的？", "對看 10 秒（靜心想著對方 10 秒），寫下腦中浮現的第一句話或第一個感覺", "你覺得我們經歷過最甜蜜的樣子，是什麼時候？",
+    "你都如何向別人形容我？", "你認為我們有什麼樣的共同點和不同點？它們如何影響我們的關係？", "我們現在可以做哪件事會讓你有戀愛的感覺？", "你心目中完美的約會行程是什麼？", "初次見面時，我說了什麼或做了什麼讓你留下深刻印象？",
+    "我是否要做過哪些舉動或說哪句話，讓你感到心動或安心？", "如果一起回到第一次見面的那天，你最想改變哪個細節？", "你覺得「浪漫」對你而言是什麼？",
+    // 互動與理解 (24-50)
+    "我是否有做過哪些事或說過哪些話，讓你感到受傷或不被理解？", "與朋友和家人相處的我，和平常的我有哪些不同？", "在原生家庭中，你最想複製／避免發生的模式是哪些？", "有沒有哪些時刻，你默默期待我做些什麼？是什麼讓你產生這樣的期待？", "有沒有哪一次你表達愛的時候是被我忽略的？",
+    "你心裡有沒有什麼事情，是你覺得「我永遠不會懂的」？", "你覺得我們現在最需要修正的互動習慣是什麼？", "分享：「我還記得你當初說過某句話，那時我心裡的感覺是……」", "「被理解」和「被需要」，你認為哪一個更重要？為什麼？", "有什麼是我還沒看見的你，但你很希望我懂的？",
+    "有沒有一種相處的方式，會讓你覺得特別心暖？", "你覺得感情當中，你最需要培養的是哪種能力？", "我最近有沒有做過哪些，讓你覺得被愛與支持？", "最近一次有點委屈，但沒有說出口的事？", "回憶一個你為我做的事，並寫下當下的感覺",
+    "當我們意見不合時，你最希望我如何回應？", "你認為我們最成功的溝通是什麼時候？", "你覺得我們之間最有趣的共同話題是什麼？", "什麼時候你覺得我們的心是連結在一起的？", "你認為我們需要更多「個人空間」還是更多「共同時間」？",
+    "當你感到被誤解時，你通常會怎麼處理？", "你覺得我們最常在什麼事情上產生誤會？", "什麼時候你會特別想和我分享你的喜悅？", "什麼時候你會特別想和我分享你的煩惱？", "如果我們的關係是一首歌，你會選擇哪一首？",
+    "什麼時候你覺得自己是最被我看見和重視的？", "什麼時候你覺得自己被我真正看見？",
+    // 自我與探索 (51-80)
+    "我可以為你做什麼，讓現階段的你感到很有幫助？", "什麼樣的旅行是你想和我一起去的？", "目前的關係裡，有沒有什麼事你很努力要去接受，但還做不到的？", "在成長的過程中，遇過最低潮是什麼時候？發生了什麼事？", "如果我對自己真誠相待，不去隱藏或假裝，那麼我生活哪個部分會更輕鬆？",
+    "有沒有哪個版本的自己，是因為這段關係才出現的？", "有沒有什麼事，是你很希望被我記住的？", "你有沒有習慣獨自處理的情緒？我能幫你分擔嗎？", "在你的字典裡，「幸福」最接近哪一個畫面或場景？", "你最常假裝沒事的時候是什麼？",
+    "你最不願意讓我看到的脆弱是什麼？", "你認為現在關係中，你扮演什麼樣的角色？你喜歡嗎？", "當你感到難過或低潮時，你最希望我怎麼支持你？", "你在關係中意見分歧時，會先考慮對方的感受，還是自己的需求？", "你覺得收禮物重要嗎？收過我送過最喜歡的禮物是什麼？",
+    "你最常聽到什麼樣的讚美？你最喜歡聽到哪些讚美？", "愛情和麵包哪個重要？為什麼？", "你的愛的語言是什麼？請按照喜好高低排序", "如果可以改變自己的一個特質，你會改變什麼？為什麼？", "你心中最大的夢想是什麼？我能如何支持你實現它？",
+    "什麼是你一直想嘗試但還沒機會做的事情？", "你最害怕失去的是什麼？", "如果能回到過去，你會給年輕的自己什麼建議？", "什麼是你引以為傲的成就？", "你對未來的退休生活有什麼想像？",
+    "你覺得我身上有哪些特質會讓你感到安心？", "什麼是讓你感到最不自在或壓力的情境？", "如果生命只剩下一年，你會想做些什麼？", "你在獨處時最喜歡做什麼？", "什麼是你絕對不會讓步的原則？",
+    // 信任與成長 (81-100)
+    "如果我們的感情只能留下三個片段，你會選哪三個？", "你希望這段感情，能讓你成為什麼樣的人？", "分享：「其實我有點怕你看到我的那個部分。」", "如果有紛爭，我們可以怎麼設立和好的儀式？", "成長過程中，家人讓你最感動和最痛苦的事是什麼？",
+    "我上一次稱讚你是什麼時候？你有什麼樣的感覺？", "你認為我為你做什麼事時，有加深你對我的信任感？", "這段關係中，有形的或無形的，有什麼事你還想要的？", "對你來說，我們之間最珍貴、最不能取代的是什麼？", "你能想像和我一起面對生活困境嗎？我會是什麼樣的夥伴？",
+    "在這段感情中，你最害怕經歷的是什麼？", "你想和我一起解鎖哪些目標？設立它吧！", "你在生氣或難過時，會怎麼向我表達？你認為我會知道嗎？", "如果我突然消失，有什麼是你來不及說的？", "你覺得婚姻的本質是什麼？為什麼有人選擇不要它？",
+    "如果我的成長方向和方法都不符合你的想像，你會選擇支持，還是會改變我？", "你對我們的未來有什麼樣的憧憬和期待？", "你認為我們的關係還可以在哪些方面變得更好？", "你最期待我們一起創造什麼樣的回憶？", "最後一題，請給對方一個擁抱，並說一句話"
+];
+
+// 🔴 🔴 🔴 請在這裡貼上你的 Firebase Config 🔴 🔴 🔴
+const firebaseConfig = {
+    apiKey: "AIzaSyBd8NBAWnbAIDghZViRUWTxonw8y_i8YCM",
+    authDomain: "question100-2ee0a.firebaseapp.com",
+    databaseURL: "https://question100-2ee0a-default-rtdb.firebaseio.com",
+    projectId: "question100-2ee0a",
+    storageBucket: "question100-2ee0a.firebasestorage.app",
+    messagingSenderId: "981411288810",
+    appId: "1:981411288810:web:1c5492575193ee9b8da993",
+    measurementId: "G-R2JCJEYNJL"
+};
+
+// 初始化 Firebase
+let db;
+try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+} catch (e) {
+    console.error("Firebase 初始化失敗，請檢查 Config", e);
+}
+
+createApp({
+    setup() {
+        const loading = ref(true);
+        const roomId = ref(localStorage.getItem('love100_roomId') || '');
+        const inputRoomId = ref('');
+        const questions = ref(QUESTION_LIST);
+        const currentDay = ref(1);
+        
+        // 使用者身份： 'host' 或 'partner' (簡單區分)
+        const userRole = ref(localStorage.getItem('love100_role') || 'unknown');
+        
+        // 答案資料
+        const answers = ref({}); // { day_1: { host: '', partner: '' } }
+        
+        const myCurrentAnswer = ref('');
+        const isSaving = ref(false);
+        const saved = ref(false);
+        
+        const showHistory = ref(false);
+        
+        // modal
+        const modal = ref({ show: false, title: '', message: '' });
+
+        // 計算屬性
+        const isInRoom = computed(() => !!roomId.value);
+        const todayQuestion = computed(() => questions.value[currentDay.value - 1] || "旅程已結束");
+        
+        // 顯示邏輯
+        const partnerCurrentAnswer = computed(() => {
+            if (!roomId.value || !answers.value[`day_${currentDay.value}`]) return '';
+            const role = userRole.value === 'host' ? 'partner' : 'host';
+            return answers.value[`day_${currentDay.value}`][role] || '';
+        });
+
+        // 歷史紀錄計算
+        const historyDays = computed(() => {
+            const days = [];
+            for (let i = 1; i < currentDay.value; i++) {
+                days.push(i);
+            }
+            return days.reverse();
+        });
+
+        // 輔助：產生隨機 ID
+        const generateId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        // 1. 建立房間
+        const createRoom = async () => {
+            if (!db) return alert('Firebase 未設定');
+            const newId = generateId();
+            const startDate = Date.now();
+            
+            await db.ref(`rooms/${newId}`).set({
+                startDate: startDate,
+                created: true
+            });
+
+            roomId.value = newId;
+            userRole.value = 'host';
+            localStorage.setItem('love100_roomId', newId);
+            localStorage.setItem('love100_role', 'host');
+            
+            initRoomListener();
+            
+            modal.value = {
+                show: true,
+                title: '房間已建立！',
+                message: `你的配對碼是：${newId}。請把這個號碼傳給你的另一半輸入。`
+            };
+        };
+
+        // 2. 加入房間
+        const joinRoom = async () => {
+            if (!db) return alert('Firebase 未設定');
+            const id = inputRoomId.value.toUpperCase();
+            
+            // 檢查房間是否存在
+            const snapshot = await db.ref(`rooms/${id}`).once('value');
+            if (!snapshot.exists()) {
+                modal.value = { show: true, title: '錯誤', message: '找不到這個房間，請確認配對碼。' };
+                return;
+            }
+
+            roomId.value = id;
+            userRole.value = 'partner';
+            localStorage.setItem('love100_roomId', id);
+            localStorage.setItem('love100_role', 'partner');
+            
+            initRoomListener();
+        };
+
+        // 3. 監聽房間數據變更 (核心邏輯)
+        const initRoomListener = () => {
+            if (!roomId.value) return;
+
+            db.ref(`rooms/${roomId.value}`).on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    // 計算當前天數
+                    if (data.startDate) {
+                        const start = new Date(data.startDate);
+                        const now = new Date();
+                        // 計算天數差 (毫秒 -> 天)
+                        const diffTime = Math.abs(now - start);
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                        // 如果你想測試，可以把上面的 Math.ceil 改成 Math.ceil(diffTime / (1000 * 60)) // 分鐘
+                        currentDay.value = Math.min(Math.max(diffDays, 1), 100);
+                    }
+
+                    // 更新答案
+                    if (data.answers) {
+                        answers.value = data.answers;
+                        // 同步當天的輸入框
+                        const todayData = data.answers[`day_${currentDay.value}`] || {};
+                        if (todayData[userRole.value] && myCurrentAnswer.value === '') {
+                            myCurrentAnswer.value = todayData[userRole.value];
+                        }
+                    }
+                }
+                loading.value = false;
+            });
+        };
+
+        // 4. 儲存答案 (防抖動 Debounce)
+        let timeout = null;
+        const saveAnswerDebounce = () => {
+            isSaving.value = true;
+            saved.value = false;
+            
+            if (timeout) clearTimeout(timeout);
+            
+            timeout = setTimeout(() => {
+                if (!roomId.value) return;
+                
+                db.ref(`rooms/${roomId.value}/answers/day_${currentDay.value}`).update({
+                    [userRole.value]: myCurrentAnswer.value
+                }).then(() => {
+                    isSaving.value = false;
+                    saved.value = true;
+                });
+            }, 1000); // 停止打字 1 秒後儲存
+        };
+
+        // 取得歷史答案輔助
+        const getMyAnswer = (day) => {
+            const dayData = answers.value[`day_${day}`];
+            if (!dayData) return '';
+            return dayData[userRole.value];
+        };
+
+        const getPartnerAnswer = (day) => {
+            const dayData = answers.value[`day_${day}`];
+            if (!dayData) return '';
+            const role = userRole.value === 'host' ? 'partner' : 'host';
+            return dayData[role];
+        };
+
+        // 頁面載入時，如果有舊的登入資訊就自動連線
+        onMounted(() => {
+            if (roomId.value) {
+                initRoomListener();
+            } else {
+                loading.value = false;
+            }
+        });
+
+        return {
+            loading,
+            isInRoom,
+            roomId,
+            inputRoomId,
+            createRoom,
+            joinRoom,
+            currentDay,
+            todayQuestion,
+            myCurrentAnswer,
+            partnerCurrentAnswer,
+            saveAnswerDebounce,
+            isSaving,
+            saved,
+            showHistory,
+            historyDays,
+            questions,
+            getMyAnswer,
+            getPartnerAnswer,
+            modal
+        };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
